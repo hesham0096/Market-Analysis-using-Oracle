@@ -1,0 +1,10 @@
+CREATE TABLE tableRetail 
+(
+    Invoice	VARCHAR(50),
+    StockCode	VARCHAR(50),
+    Quantity	INT,
+    InvoiceDate	VARCHAR(50),
+    Price	FLOAT,
+    Customer_ID	VARCHAR(50),
+    Country	VARCHAR(50)
+);

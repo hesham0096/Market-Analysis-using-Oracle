@@ -1,0 +1,105 @@
+select * from segment_view 
+
+select  Customer_ID , Recency , monetary,
+NTILE (5) Over (Order by Recency desc) as r_score ,
+Ntile (5) over (order by (frequency+monetary)/2 desc ) as rm_score,
+
+    CASE
+        when NTILE(5) over (order by Recency desc ) in (5,4 ) and Ntile (5) over (order by (frequency+monetary)/2 desc ) in (5,4)  then     'Champions'
+        when NTILE(5) over (order by Recency desc ) in (5,4,3 ) and Ntile (5) over (order by (frequency+monetary)/2 desc ) in (2,3)  then   'Potential Loyalists'
+        when NTILE(5) over (order by Recency desc ) in (5,4,3 ) and Ntile (5) over (order by (frequency+monetary)/2 desc) in (3,4,5)  then 'Loyal Customers'
+        when NTILE(5) over (order by Recency desc ) in (5 ) and Ntile (5) over (order by (frequency+monetary)/2 desc ) in (1)  then            'Recent Customers'
+        when NTILE(5) over (order by Recency  desc) in (4,3 ) and Ntile (5) over (order by (frequency+monetary)/2 desc ) in (1)  then    'Promising'
+         when NTILE(5) over (order by Recency desc  ) in (2,3 ) and Ntile (5) over (order by (frequency+monetary)/2 desc ) in (2,3)  then    'Customers needing Attention'
+       when NTILE(5) over (order by Recency desc  ) in (1,2 ) and Ntile (5) over (order by (frequency+monetary)/2 desc ) in (3,4,5)  then    'At Risk'
+     when NTILE(5) over (order by Recency  desc ) in (1 ) and Ntile (5) over (order by (frequency+monetary)/2 desc ) in (4,5)  then    'Cant Lose Them'
+        when NTILE(5) over (order by Recency desc   ) in (1 ) and Ntile (5) over (order by (frequency+monetary)/2 desc ) in (2)  then    'Hibernating'
+           when NTILE(5) over (order by Recency desc  ) in (1 ) and Ntile (5) over (order by (frequency+monetary)/2 desc ) in (1)  then    'Lost'
+
+    END AS Cust_segment
+    
+    from  segment_view 
+    
+    where  Customer_ID = 12885
+    
+
+select * from (
+select  Customer_ID , Recency , monetary,
+NTILE (5) Over (Order by Recency desc) as r_score ,
+Ntile (5) over (order by (frequency+monetary)/2   ) as rm_score
+ from  segment_view  )
+ 
+where  r_score = 5 
+and  rm_score = 5 
+
+select customer_id , Monetary from 
+segment_view 
+order by Monetary desc 
+
+
+Create View segment_base as 
+select Customer_ID ,
+( select Max(to_date( INVOICEDATE)) from tableretail   ) -   Max( to_date(Invoicedate) ) as recency  ,
+ count(distinct Invoice)  as frequency , 
+ sum(Quantity * Price) as monetary
+ FROM tableretail
+ group by Customer_ID 
+
+
+create View segment_score as 
+select  Customer_ID , recency , frequency , monetary , 
+NTILE (5) Over (Order by Recency desc) as r_score ,
+NTILE (5) Over (Order by monetary ) as m_score ,
+NTILE (5) Over (Order by frequency ) as f_score 
+
+ FROM segment_base
+
+select * from segment 
+drop view segment
+
+create View segment_score_fm  as 
+select  Customer_ID , recency , frequency , monetary , r_score , m_score , f_score ,
+NTILE (5) Over (Order by (m_score + f_score ) /2 ) as fm_score 
+from segment_score
+
+select * from final_segment
+
+drop view final_segment
+
+
+select * from (
+select  Customer_ID , Recency , monetary,
+NTILE (5) Over (Order by Recency desc) as r_score ,
+Ntile (5) over (order by (frequency+monetary)/2   ) as rm_score
+ from  segment_view  )
+ 
+ create View final_segment  as 
+select  Customer_ID , recency , frequency , monetary , r_score , m_score , f_score , fm_score , 
+ CASE
+        when r_score in (5,4 ) and fm_score in (5,4)  then     'Champions'
+        when r_score in (5,4,3 ) and fm_score in (2,3)  then   'Potential Loyalists'
+        when r_score in (5,4,3 ) and fm_score in (3,4,5)  then 'Loyal Customers'
+        when r_score in (5 ) and fm_score in (1)  then            'Recent Customers'
+        when r_score in (4,3 ) and fm_score in (1)  then    'Promising'
+         when r_score in (2,3 ) and fm_score in (2,3)  then    'Customers needing Attention'
+       when r_score in (1,2 ) and fm_score in (3,4,5)  then    'At Risk'
+     when r_score in (1 ) and  fm_score in (4,5)  then    'Cant Lose Them'
+        when r_score in (1 ) and  fm_score in (2)  then    'Hibernating'
+           when r_score  in (1 ) and fm_score in (1)  then    'Lost'
+
+    END AS Cust_segment
+
+
+from segment_score_fm 
+
+drop view final_segment
+
+select * from final_segment 
+where Customer_Id = 12879
+
+select Customer_ID  , Recency , Frequency , Monetary,  R_score , FM_score , Cust_Segment from final_segment 
+order by customer_id
+
+ 
+
+

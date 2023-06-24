@@ -1,0 +1,182 @@
+--Question One
+
+#1
+SELECT 
+    (SELECT SUM(sum_per_cust)  
+    FROM (
+        SELECT SUM(sales) AS sum_per_cust, PERCENT_RANK() OVER (ORDER BY SUM(sales) DESC) * 100 AS Sales_perce
+        FROM Retail_view 
+        GROUP BY Customer_ID  
+    ) rs
+    WHERE Sales_perce <= 20 
+    ) / 
+    (SELECT SUM(sales) FROM Retail_view) * 100 AS sales_percentage
+FROM dual;
+
+#2 
+SELECT 
+    (SELECT SUM(sum_per_STOCK)  
+    FROM (
+        SELECT SUM(sales) AS sum_per_STOCK, PERCENT_RANK() OVER (ORDER BY SUM(sales) DESC) * 100 AS Sales_perce
+        FROM Retail_view 
+        GROUP BY STOCKCODE  
+    ) rs
+    WHERE Sales_perce <= 5
+    ) / 
+    (SELECT SUM(sales) FROM Retail_view) * 100 AS sales_percentage
+FROM dual;
+#3 
+select corr ( price , sum_per_prod ) from (
+select  StockCode , price ,  sum(price) over(PARTITION BY StockCode) as sum_per_prod from retail_view)
+
+
+#4 
+select * from (
+select StockCode ,  sum(QUANTITY) , sum(Sales) , Dense_Rank() OVER (ORDER BY SUM(QUANTITY)  ) AS least_product 
+From Retail_view 
+group by StockCode )
+where least_product < 50
+
+
+
+
+#5
+WITH monthly_sales AS (
+  SELECT 
+    TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'YYYY') AS YEAR,
+    TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'MONTH') AS MONTH_NAME,
+    SUM(Sales) AS current_Month_Sales,
+    LAG(SUM(sales)) OVER (ORDER BY TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'YY'), TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'MM')) AS Prev_Month,
+    TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'MM') AS Prev_Month_Number,
+    (SUM(Sales) - LAG(SUM(sales)) OVER (ORDER BY TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'YY'), TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'MM'))) AS Difference
+  
+FROM Retail_view
+
+  GROUP BY TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'YY'), TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'MM'), TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'YYYY'), TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'MONTH')
+)
+
+
+SELECT *
+FROM monthly_sales
+WHERE Difference < 0;
+
+#6
+SELECT 
+    TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'YYYY') AS YEAR,
+    TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'MONTH') AS MONTH_NAME,
+    SUM(sales) / (SELECT SUM(sales) FROM Retail_view) * 100 AS PERCENTAGE_SALES
+FROM 
+    Retail_view
+GROUP BY 
+    TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'MONTH'),
+    TO_CHAR(TO_DATE(INVOICEDATE, 'DD-MON-YY'), 'YYYY')
+    order by PERCENTAGE_SALES desc
+
+
+
+
+
+
+
+--Question Two 
+
+-- The first view, segment_base, calculates the recency , frequency
+--  and monetary for each customer in the table.
+Create View segment_base as 
+select Customer_ID ,
+( select Max(to_date( INVOICEDATE)) from tableretail   ) -   Max( to_date(Invoicedate) ) as recency  ,
+ count(distinct Invoice)  as frequency , 
+ sum(Quantity * Price) as monetary
+ FROM tableretail
+ group by Customer_ID 
+
+-- The second view, segment_score, assigns a score to each customer based on their recency, frequency, and
+-- monetary value. It does this using the NTILE() function.
+create View segment_score as 
+select  Customer_ID , recency , frequency , monetary , 
+NTILE (5) Over (Order by Recency desc) as r_score ,
+NTILE (5) Over (Order by monetary ) as m_score ,
+NTILE (5) Over (Order by frequency ) as f_score 
+
+ FROM segment_base
+
+-- The third view, segment_score_fm, calculates a combined score for each customer based on their frequency
+-- and monetary scores. It does this by adding the two scores together and using NTILE() to divide the combined
+-- score into five equal parts.
+create View segment_score_fm  as 
+select  Customer_ID , recency , frequency , monetary , r_score , m_score , f_score ,
+NTILE (5) Over (Order by (m_score + f_score ) /2 ) as fm_score 
+from segment_score
+
+--the last view, final_segment to get all the desired columns and apply case when statement to
+-- label the customers
+create View final_segment  as 
+select  Customer_ID , recency , frequency , monetary , r_score , m_score , f_score , fm_score , 
+
+ CASE
+        when r_score in (5,4 ) and fm_score in (5,4) 	  then     'Champions'
+        when r_score in (5,4,3 ) and fm_score in (2,3)     then   'Potential Loyalists'
+        when r_score in (5,4,3 ) and fm_score in (3,4,5)   then 'Loyal Customers'
+        when r_score in (5 ) and fm_score in (1)  	   then 'Recent Customers'
+        when r_score in (4,3 ) and fm_score in (1)           then  'Promising'
+        when r_score in (2,3 ) and fm_score in (2,3) 	   then  'Customers needing Attention'
+        when r_score in (1,2 ) and fm_score in (3,4,5)  	   then   'At Risk'
+        when r_score in (1 ) and  fm_score in (4,5)           then   'Cant Lose Them'
+        when r_score in (1 ) and  fm_score in (2)  	    then   'Hibernating'
+        when r_score  in (1 ) and fm_score in (1)  	    then    'Lost'
+  END AS Cust_segment
+
+FROM segment_score_fm
+
+select Customer_ID , Recency , Frequency , Monetary, R_score , FM_score , Cust_Segment from final_segment  
+order by customer_id
+
+--Question Three 
+#A 
+-- Use subqueries to find the longest period of consecutive purchases for each customer
+
+select cust_id , max(count) as max from (
+select cust_id , count(date) as count , grp from
+
+ -- Use the DATE_ADD() function to create groups based on consecutive purchases
+
+(select cust_id , date  , row_number () over(partition by cust_id  order by date) as d , DATE_ADD(date, INTERVAL -(ROW_NUMBER() OVER (partition by cust_id ORDER BY date)) DAY) as grp
+from daily_purchase
+group by cust_id , date ) as x 
+group by grp , cust_id
+order by cust_id
+) as y 
+group by cust_id
+
+#B 
+-- Create views to calculate the total purchase amount for each customer and running total for each purchase
+ -- Join the running and More_than_250 views to calculate the total purchase amount and running total for each purchase
+
+create view More_than_250 as (
+select cust_id ,  sum(amount) as total_sum
+from daily_purchase 
+group by cust_id 
+having  sum(amount)  >=250
+) 
+
+create  view running  as (
+ SELECT cust_id, 
+               date, 
+               amount, 
+               SUM(amount) OVER (PARTITION BY cust_id ORDER BY date) AS sum_cust
+        FROM daily_purchase ) 
+
+
+SELECT avg( t.num_days )
+FROM (
+    SELECT cust_id,  MIN(date) AS start_date,   COUNT(*) + 1  AS num_days
+    FROM (
+        select r.cust_id , m.total_sum , sum_cust , r.date
+from running r 
+join More_than_250 m 
+on r.cust_id = m.cust_id 
+    ) t
+    WHERE sum_cust < 250
+    GROUP BY cust_id
+) t                                                              
+
